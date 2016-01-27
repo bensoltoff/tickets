@@ -1,0 +1,109 @@
+---
+layout: post
+title: "Do Cops Pull Over Fewer People in the Rain?"
+description: "An Assessment of Precipitation's Effect on Traffic Stops"
+output: html_document
+date: 2016-01-13 17:00:00 -0500
+category: r
+tags: [r]
+comments: true
+---
+
+```{r settings, cache = FALSE, echo = FALSE}
+knitr::opts_chunk$set(cache = TRUE, message = FALSE, warning = FALSE, echo = FALSE)
+options(digits = 2)
+```
+
+```{r packages, cache = FALSE}
+require(readr)
+require(dplyr)
+require(lubridate)
+require(magrittr)
+require(ggplot2)
+require(weatherData)
+
+set.seed(11091987)
+```
+
+
+So I enjoy reading Deadspin on occasion, sometimes checking out Drew Magary's Funblog where he answers reader questions - usually few directly pertain to sports. A couple weeks ago, one reader (Brian) wrote in asking:
+
+> If you were a cop, would you ever pull someone over in the rain (presuming you aren’t a Seattle cop)?
+
+This got me wondering: are cops less likely to pull a person over in the rain? Magary makes the argument that he would not; in not quite the same words, the basic argument is that cops are lazy and don't want to deal with the trouble of conducting a traffic stop in the rain. But is this the norm? Or do the police perform their duty regardless of exterior forces such as the weather?
+
+In order to test this argument, first we need data on traffic stops. Montgomery County, Maryland publishes an [open dataset of all traffic stops initiated within the county](https://data.montgomerycountymd.gov/Public-Safety/Traffic-Violations/4mse-ku6q). While not generalizable to all police forces, this at least gives us the opportunity to see if our hypothesis holds up to a basic test. Furthermore, the data is relatively comprehensive with records dating back to 2012. Combine this with historical weather data from the region, and we can begin to unpack this puzzle.
+
+I downloaded the Montgomery County data and combined it with daily weather data from [WeatherUnderground](http://www.wunderground.com/). I used daily temperature and precipitation readings from the [Frederick Municipal Airport](http://w1.weather.gov/obhistory/KFDK.html) which is the closest major weather station to the county. In an ideal world we would combine real-time precipitation readings measured at the closest point to the actual stop, at least at a ZIP code-level. Unfortunately, I could not find historical data at that level. So we proceed with our airport readings.
+
+```{r prep_data}
+# read in data
+## ticket data
+## https://data.montgomerycountymd.gov/Public-Safety/Traffic-Violations/4mse-ku6q
+tickets <- read_csv("data/Traffic_Violations.csv",
+                    col_types = c("cc?????????????????????????????????")) %>%
+  rename(date = `Date Of Stop`,
+         time = `Time Of Stop`) %>%
+  mutate(date = mdy(date),
+         time = hms(time))
+
+## weather data
+require(weatherData)
+
+### separate object for each year - avoids max query limit
+weather12 <- getWeatherForDate("KFDK",
+                               start_date = "2012-01-01",
+                               end_date = "2012-12-31",
+                               opt_custom_columns = TRUE,
+                               custom_columns = c(2:4, 20))
+
+weather13 <- getWeatherForDate("KFDK",
+                               start_date = "2013-01-01",
+                               end_date = "2013-12-31",
+                               opt_custom_columns = TRUE,
+                               custom_columns = c(2:4, 20))
+
+weather14 <- getWeatherForDate("KFDK",
+                               start_date = "2014-01-01",
+                               end_date = "2014-12-31",
+                               opt_custom_columns = TRUE,
+                               custom_columns = c(2:4, 20))
+
+weather15 <- getWeatherForDate("KFDK",
+                               start_date = "2015-01-01",
+                               end_date = "2015-12-31",
+                               opt_custom_columns = TRUE,
+                               custom_columns = c(2:4, 20))
+
+weather16 <- getWeatherForDate("KFDK",
+                               start_date = "2016-01-01",
+                               end_date = "2016-01-26",
+                               opt_custom_columns = TRUE,
+                               custom_columns = c(2:4, 20))
+
+### combine years
+weather <- rbind(weather12, weather13, weather14, weather15, weather16)
+rm(weather12, weather13, weather14, weather15, weather16)
+
+### clean up weather
+weather$Date <- as.character(weather$Date)    # fix error in date formatting
+weather %<>%
+  tbl_df %>%
+  rename(date = Date) %>%
+  mutate(date = ymd(date))
+
+# get number of stops for each day
+# note that multiple tickets can be written for each stop
+stops <- tickets %>%
+  mutate(hour = hour(time)) %>%
+  group_by(date, hour, Latitude, Longitude) %>%
+  summarise(n_vio = n()) %>%
+  group_by(date, hour) %>%
+  summarise(n = n()) %>%
+  mutate(wday = wday(date, label = TRUE)) %>%
+  ungroup
+```
+
+
+
+
